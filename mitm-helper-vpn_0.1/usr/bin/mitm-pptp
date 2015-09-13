@@ -1,0 +1,313 @@
+#!/usr/bin/env python
+
+"""Helper script for starting and stopping PPTP VPN"""
+
+from argparse import ArgumentParser
+import os
+import sys
+import signal
+import time
+import subprocess
+import ConfigParser
+
+DEFAULT_CONFIG_FILE = '/etc/mitm-pptp.conf'
+DEFAULT_INTERFACE = 'eth0'
+
+FLUSH_IPTABLES = 'iptables -t nat -F'
+POSTROUTE_IPTABLES = ('iptables -t nat -A POSTROUTING '
+                      '-s 10.6.9.0/24 -o _INT_ -j MASQUERADE')
+FORWARD_IPTABLES = ('iptables -A FORWARD -p tcp --syn '
+                    '-s 10.6.9.0/24 -j TCPMSS --set-mss 1356')
+
+ENABLE_IP_FORWARD = 'sysctl -w net.ipv4.ip_forward=1'
+DISABLE_IP_FORWARD = 'sysctl -w net.ipv4.ip_forward=0'
+
+main_class = None
+
+class MitmPptp(object):
+
+    """Class for all functionality"""
+
+    iptables_configured = False
+    ip_forwarding_configured = False
+    pptp_service_started = False
+
+    config_file = None
+    verbose = None
+    interface = None
+
+    def debug(self, message):
+
+        """Write a message only if verbose"""
+
+        if self.verbose:
+            print "[Debug] %s " % message
+
+    @classmethod
+    def error(cls, error):
+
+        """Write an error to stderr"""
+
+        sys.stderr.write("[Error] %s\n" % error)
+
+    @classmethod
+    def is_root(cls):
+
+        """Check if running with privileges"""
+
+        if os.geteuid() != 0:
+            return False
+        else:
+            return True
+
+    def run(self, config):
+
+        """Initiate start sequence"""
+
+        self.config_file = config['config_file']
+        self.verbose = config['verbose']
+        self.interface = config['interface']
+
+        self.debug("Checking for root privs...")
+        if not self.is_root():
+            self.error("You need root permissions to do use this script!")
+            return -4
+
+        self.debug("Parsing config file...")
+        rules = self.parse_config()
+
+        if rules == None:
+            self.error("Error parsing config!")
+            return -1
+
+        self.debug("Enabling IP forwarding...")
+        if self.enable_ip_forwarding() != 0:
+            self.error("Unable to enable IP forwarding!")
+            self.shutdown()
+
+        self.ip_forwarding_configured = True
+
+        self.debug("Configuring iptables...")
+        if self.configure_iptables(rules) != 0:
+            self.error("Unable to configure iptables!")
+            self.shutdown()
+
+        self.iptables_configured = True
+
+        self.debug("Starting PPTP service...")
+        if self.start_pptp_service() != 0:
+            self.error("Unable to start PPTP service!")
+            self.shutdown()
+
+        self.pptp_service_started = True
+
+        print "Setup complete! You can join your device to the VPN."
+        print ""
+        print "Press Ctrl+C to cancel"
+
+
+        # Run forever!
+        while 1:
+            time.sleep(1000)
+
+    def shutdown(self):
+
+        """Shutdown sequence"""
+
+        if self.ip_forwarding_configured:
+
+            self.debug("Removing IP forwarding...")
+            if self.disable_ip_forwarding() != 0:
+                self.error("Unable to disable IP forwarding!")
+
+        if self.iptables_configured:
+
+            self.debug("Removing iptables rules...")
+            if self.flush_iptables() != 0:
+                self.error("Unable to flush iptables!")
+
+
+        if self.pptp_service_started:
+
+            self.debug("Disabling PPTP service...")
+            if self.stop_pptp_service() != 0:
+                self.error("Unable to stop PPTP service!")
+
+        return 0
+
+    def parse_config(self):
+
+        """Parse the received config file and generate rules"""
+
+        rules = []
+
+        config = ConfigParser.ConfigParser()
+
+        config.read(self.config_file)
+
+
+        for section in config.sections():
+
+            self.debug("Parsing section '%s'" % section)
+
+            try:
+                proxy_port = config.get(section, 'proxyport')
+                forwards_raw = config.get(section, 'forwardports')
+
+                forwards_list = forwards_raw.split(',')
+
+                for forward_port in forwards_list:
+
+                    rules.append("iptables -t nat -A PREROUTING "
+                                 "-p tcp --dport %s -m tcp -j REDIRECT "
+                                 "--to-ports %s" % (forward_port, proxy_port))
+
+            except ConfigParser.NoOptionError:
+                self.error("Unable to parse section '%s'! Skipping."
+                        % section)
+
+        if len(rules) == 0:
+            return None
+        else:
+            return rules
+
+    def sh_exec(self, cmd):
+
+        """Shell execution helper"""
+
+        self.debug("Execing: '%s'" % cmd)
+
+        return subprocess.call(cmd, shell=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    def enable_ip_forwarding(self):
+
+        """Enable IP forwarding in kernel"""
+
+        return self.sh_exec(ENABLE_IP_FORWARD)
+
+    def disable_ip_forwarding(self):
+
+        """Disable IP forwarding in kernel"""
+
+        return self.sh_exec(DISABLE_IP_FORWARD)
+
+    def flush_iptables(self):
+
+        """Flush iptables rules"""
+
+        return self.sh_exec(FLUSH_IPTABLES)
+
+    def apply_forwarding_rules(self, rules):
+
+        """Apply each of the port forwarding rules"""
+
+        for rule in rules:
+
+            rtn = self.sh_exec(rule)
+
+            if rtn != 0:
+                self.error("Unable to apply rule: %s" % rule)
+                return rtn
+
+        return 0
+
+    def complete_iptables(self):
+
+        """Apply remaining iptables rules"""
+
+        rtn = self.sh_exec(POSTROUTE_IPTABLES.replace(
+                                    "_INT_", self.interface))
+
+        if rtn != 0:
+            self.error("Unable to setup postrouting!")
+            return rtn
+
+        rtn = self.sh_exec(FORWARD_IPTABLES)
+
+        if rtn != 0:
+            self.error("Unable to setup forwarding!")
+            return rtn
+
+        return 0
+
+    def configure_iptables(self, rules):
+
+        """Setup new iptables rules"""
+
+        rtn = 0
+
+        rtn = self.flush_iptables()
+
+        if rtn != 0:
+            self.error("Unable to flush iptables!")
+            return rtn
+
+        rtn = self.apply_forwarding_rules(rules)
+
+        if rtn != 0:
+            self.error("Unable to configure rules iptables!")
+            return rtn
+
+        rtn = self.complete_iptables()
+
+        if rtn != 0:
+            self.error("Unable to complete iptables configuration!")
+            return rtn
+
+        return 0
+
+    def start_pptp_service(self):
+
+        """Start the pptp service"""
+
+        return self.sh_exec('/etc/init.d/pptpd start')
+
+    def stop_pptp_service(self):
+
+        """Stop the pptp service"""
+
+        return self.sh_exec('/etc/init.d/pptpd stop')
+
+def signal_shutdown(signum, stack):
+
+    """Handle shutdown signals"""
+
+    print "Shutdown sequence starting!"
+
+    exit(main_class.shutdown())
+
+def main():
+
+    """Main Execution"""
+
+    global main_class
+
+    config = {}
+
+    # Signals are fun.
+    signal.signal(signal.SIGINT, signal_shutdown)
+
+    parser = ArgumentParser(description='Start and stop PPTP VPN.')
+    parser.add_argument('-v', '--verbose', action='store_const',
+                    dest='verbose', const=True, default=False,
+                    help="Be verbose.")
+    parser.add_argument('-i', '--interface', action='store',
+                    dest='interface', default=DEFAULT_INTERFACE,
+                    help='Which interface to forward out (default: eth0)')
+    parser.add_argument('-c', '--config_file', action='store',
+                    dest='config_file', default=DEFAULT_CONFIG_FILE)
+
+
+    args = parser.parse_args()
+
+    config['config_file'] = args.config_file
+    config['verbose'] = args.verbose
+    config['interface'] = args.interface
+
+    main_class = MitmPptp()
+
+    return main_class.run(config)
+
+if __name__ == "__main__":
+    sys.exit(main())

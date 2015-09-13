@@ -1,0 +1,7 @@
+Package: mitm-helper-vpn
+Architecture: all
+Maintainer: Jake Valletta
+Depends: debconf (>= 0.5.00), ppp, pptpd, iptables, python
+Priority: optional
+Version: 0.1
+Description: Helper scripts for configuring a PPTP VPN endpoint for performing man in the middle attacks. 

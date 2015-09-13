@@ -1,0 +1,252 @@
+#!/usr/bin/env python
+
+"""Helper script for adding and removing CHAP secret users"""
+
+import sys
+import os
+
+__NAME__ = 'mitm-helper-users'
+
+CHAP_SECRETS_FILE = '/etc/ppp/chap-secrets'
+PPTP_SERVICE = 'pptpd'
+
+
+class ConfigFile(object):
+
+    """Class for manipulating PPP configuration"""
+
+    users = []
+
+    def __init__(self, config_file):
+
+        """Object initialization"""
+
+        ppp_file = None
+
+        self.config_file = config_file
+
+        try:
+            ppp_file = open(config_file, 'r')
+
+            data = ppp_file.read().split('\n')
+
+            for line in data:
+                if len(line) == 0:
+                    continue
+                if line[0] == '#':
+                    continue
+
+                user, service, passwd, ip_address = line.split()
+
+                self.users.append({'user' : user,
+                                   'service' : service,
+                                   'passwd' : passwd,
+                                   'ip' : ip_address})
+
+        except IOError:
+            print "Unable to open PPP secrets config!!"
+
+        finally:
+            if ppp_file != None:
+                ppp_file.close()
+
+    def add(self, username, password):
+
+        """Add to temporary list"""
+
+        # Validate user doesnt already exist
+        for user in self.users:
+            if user['user'] == username:
+                print "User '%s' already exists!" % username
+                return -4
+
+        self.users.append({'user' : username,
+                           'service' : PPTP_SERVICE,
+                           'passwd' : password,
+                           'ip' : '*'})
+        return 0
+
+    def delete(self, username):
+
+        """Delete user from temporary list"""
+
+        new_users = []
+        found = False
+
+        for user in self.users:
+            if user['user'] == username:
+                found = True
+                continue
+            else:
+                new_users.append(user)
+
+        if not found:
+            print "User '%s' is not a user!" % username
+            return -4
+
+        self.users = new_users
+
+        return 0
+
+    def purge(self):
+
+        """Purge temporary list"""
+
+        self.users = []
+
+    def commit(self):
+
+        """Commit list to file"""
+
+        try:
+            ppp_file = open(self.config_file, 'w')
+
+            for user in self.users:
+
+                ppp_file.write("%s\t%s\t%s\t%s\n" %
+                                (user['user'],
+                                 user['service'],
+                                 user['passwd'],
+                                 user['ip']))
+
+            ppp_file.close()
+
+        except IOError:
+            print "Unable to save PPP file!!!"
+            return -5
+
+    def __str__(self):
+
+        """Generate string of object"""
+
+        rtn = "VPN Users:\n"
+
+        for user in self.users:
+
+            rtn += "  %s (%s)\n" % (user['user'], user['ip'])
+
+        return rtn
+
+def usage():
+
+    """Print program usage"""
+
+    print "Usage: %s" % __NAME__
+    print ""
+    print "    add    Add a VPN user."
+    print "    del    Delete a VPN user."
+    print "    list   List all users."
+    print "    purge  Delete all users."
+    print ""
+
+    return 0
+
+def is_root():
+
+    """Check if running with privileges"""
+
+    if os.geteuid() != 0:
+        return False
+    else:
+        return True
+
+def do_add(args):
+
+    """Add a user"""
+
+    if not is_root():
+        print "[ERROR] Root privileges are needed!"
+        return -1
+
+    if len(args) != 2:
+        print "Please provide a username and password!"
+        return -1
+
+    username = args[0]
+    password = args[1]
+
+    config = ConfigFile(CHAP_SECRETS_FILE)
+
+    if config.add(username, password) != 0:
+        return -2
+
+    return config.commit()
+
+def do_del(args):
+
+    """Delete a user"""
+
+    if not is_root():
+        print "[ERROR] Root privileges are needed!"
+        return -1
+
+    if len(args) != 1:
+        print "Please provide a username!"
+        return -1
+
+    username = args[0]
+
+    config = ConfigFile(CHAP_SECRETS_FILE)
+
+    if config.delete(username) != 0:
+        return -2
+
+    return config.commit()
+
+def do_list():
+
+    """List all users"""
+
+    if not is_root():
+        print "[ERROR] Root privileges are needed!"
+        return -1
+
+    config = ConfigFile(CHAP_SECRETS_FILE)
+
+    print config
+
+    return 0
+
+def do_purge():
+
+    """Purge all users"""
+
+    if not is_root():
+        print "[ERROR] Root privileges are needed!"
+        return -1
+
+    config = ConfigFile(CHAP_SECRETS_FILE)
+
+    config.purge()
+
+    return config.commit()
+
+def main():
+
+    """Main Execution"""
+
+    if len(sys.argv) < 2:
+        usage()
+        return 0
+
+    # Remove File Name
+    sys.argv.pop(0)
+
+
+    sub_cmd = sys.argv.pop(0)
+
+    if sub_cmd == 'add':
+        return do_add(sys.argv)
+    elif sub_cmd == 'del':
+        return do_del(sys.argv)
+    elif sub_cmd == 'list':
+        return do_list()
+    elif sub_cmd == 'purge':
+        return do_purge()
+    else:
+        print "Unknown sub command: %s" % sub_cmd
+        usage()
+        return -1
+
+if __name__ == "__main__":
+    sys.exit(main())

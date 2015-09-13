@@ -1,0 +1,25 @@
+#!/bin/sh
+
+PPTP_CONFIG=/etc/pptpd.conf
+PPP_OPTIONS_CONFIG=/etc/ppp/pptpd-options
+
+# Disable pptpd from auto start.
+update-rc.d pptpd disable 2> /dev/null
+
+# Add/Edit network information
+value=$(grep -icE "^localip " $PPTP_CONFIG)
+
+if [ $value -ne 1 ]
+then
+    echo "localip 10.6.9.1" >> $PPTP_CONFIG
+    echo "remoteip 10.6.9.100-110" >> $PPTP_CONFIG
+fi
+
+# Add/Edit DNS information
+value=$(grep -icE "^ms\-dns " $PPP_OPTIONS_CONFIG)
+
+if [ $value -eq 0 ]
+then
+    echo "ms-dns 8.8.8.8" >> $PPP_OPTIONS_CONFIG
+    echo "ms-dns 8.8.4.4" >> $PPP_OPTIONS_CONFIG
+fi
