@@ -5,10 +5,10 @@ These scripts are designed to make it easy and straight-forward to configure a U
 
 *Note: There is no black magic here - simply some utilities to make it easier to use.*
 
-The typical work flow would be a VM that has one interface, we'll call it 'eth0'.  First, we start the `pptpd` daemon, then we configure IP forwarding and apply custom `iptables` rules to forward traffic to specific proxies, such as Burp.
+The typical work flow would be a VM that has one interface, we'll call it 'eth0'. First, we start the `pptpd` daemon and then we configure IP forwarding and apply custom `iptables` rules to forward traffic to specific proxies, such as Burp.
 
 ## Configuration
-This tool is designed to work on Ubuntu virtual machines operating in 'bridged' mode. Your milage will vary if you use another VM, but I suppose Kali Linux should also work fine.
+This tool is designed to work on Ubuntu virtual machines operating in 'bridged' mode. Your mileage will vary if you use another VM, but I suppose Kali Linux should also work fine.
 
 To download and setup the tool, run the following commands:
 
@@ -18,7 +18,7 @@ To download and setup the tool, run the following commands:
     $ sudo dpkg -i build/mitm-helper-vpn_0.1.deb
 
 ### Managing Users
-First, we need to add a user.  This example will add a user called 'analyst', with a password of 'analyst':
+First, we need to add a user. This example will add a user called 'analyst', with a password of 'analyst':
 
     $ sudo mitm-pptp-users add analyst analyst
 
@@ -35,7 +35,7 @@ To delete all users:
     $ sudo mitm-pptp-users purge
 
 ### Configuring Proxy Rules
-The file `/etc/mitm-pptp.conf` will be used to configure how you will intercept traffic. By default, traffic is simply passed through (no proxy).  This should work if you just want to observe traffic using a tool like Wireshark.  In our case, let's assume we have Burp running on port 9999, and we'd like to forward traffic on ports 80 and 443 to this proxy.  We configure the `/etc/mitm-pptp.conf` file as follows:
+The file `/etc/mitm-pptp.conf` will be used to configure how you will intercept traffic. By default, traffic is simply passed through (no proxy). This should work if you just want to observe traffic using a tool like Wireshark. In our case, let's assume we have Burp running on port 9999, and we'd like to forward traffic on ports 80 and 443 to this proxy. We configure the `/etc/mitm-pptp.conf` file as follows:
 
 ```
 [HTTP Proxies]
@@ -43,7 +43,7 @@ ProxyPort:9999
 ForwardPorts:80,443
 ```
 
-Now, let's say that we determine our app/device uses a custom protocol on port 1234, and Burp is not useful for intercepting this traffic.  We created a python script, and it is listening on port 8888.  Let's add rules for this:
+Now, let's say that we determine our app/device uses a custom protocol on port 1234, and Burp is not useful for intercepting this traffic. We created a python script, and it is listening on port 8888. Let's add rules for this:
 
 ```
 [HTTP Proxies]
@@ -58,7 +58,7 @@ ForwardPorts:1234
 This configuration can be found in the file `sample.mitm-pptp.conf`.
 
 #### Starting the VPN
-By default, the PPTP server will be disabled and no forwarding will happen.  Once you're ready to start, run:
+By default, the PPTP server will be disabled and no forwarding will happen. Once you're ready to start, run:
 
     $ sudo mitm-pptp start -v
 
