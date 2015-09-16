@@ -76,10 +76,6 @@ class MitmPptp(object):
         self.debug("Parsing config file...")
         rules = self.parse_config()
 
-        if rules == None:
-            self.error("Error parsing config!")
-            return -1
-
         self.debug("Enabling IP forwarding...")
         if self.enable_ip_forwarding() != 0:
             self.error("Unable to enable IP forwarding!")
@@ -166,10 +162,7 @@ class MitmPptp(object):
                 self.error("Unable to parse section '%s'! Skipping."
                         % section)
 
-        if len(rules) == 0:
-            return None
-        else:
-            return rules
+        return rules
 
     def sh_exec(self, cmd):
 
