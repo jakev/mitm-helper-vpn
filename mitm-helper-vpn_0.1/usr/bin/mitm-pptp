@@ -76,6 +76,9 @@ class MitmPptp(object):
         self.debug("Parsing config file...")
         rules = self.parse_config()
 
+        if rules == None:
+            return -5
+
         self.debug("Enabling IP forwarding...")
         if self.enable_ip_forwarding() != 0:
             self.error("Unable to enable IP forwarding!")
@@ -139,8 +142,11 @@ class MitmPptp(object):
 
         config = ConfigParser.ConfigParser()
 
-        config.read(self.config_file)
-
+        try:
+            config.read(self.config_file)
+        except ConfigParser.MissingSectionHeaderError:
+            self.error("Missing section header in config file!")
+            return None
 
         for section in config.sections():
 

@@ -60,11 +60,11 @@ This configuration can be found in the file `sample.mitm-pptp.conf`.
 #### Starting the VPN
 By default, the PPTP server will be disabled and no forwarding will happen. Once you're ready to start, run:
 
-    $ sudo mitm-pptp start -v
+    $ sudo mitm-pptp -v
 
 If you want to specify a custom configuration file, you can do so with the `-c` argument:
 
-    $ sudo mitm-pptp start -v -c my-pptp.conf
+    $ sudo mitm-pptp -v -c my-pptp.conf
 
 ### Stopping the VPN
 By hitting Ctrl+C, the script will begin the shutdown process.
