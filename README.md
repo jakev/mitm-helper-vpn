@@ -57,6 +57,8 @@ ForwardPorts:1234
 
 This configuration can be found in the file `sample.mitm-pptp.conf`.
 
+*Side note for Burp users: You'll likely need to listen on all interfaces AND enable the invisible proxying to have your setup work properly.*
+
 #### Starting the VPN
 By default, the PPTP server will be disabled and no forwarding will happen. Once you're ready to start, run:
 
